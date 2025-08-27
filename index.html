@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Alien Startup Simulation</title>
+<style>
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#crt {
+  position: relative;
+  width: 800px;
+  height: 600px;
+  background: #001a44;
+  color: #6ec8ff;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  padding: 10px;
+  box-shadow: 0 0 20px #001a44, inset 0 0 80px #002a6d;
+  text-shadow: 0 0 8px #6ec8ff;
+}
+#crt::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.05) 50%);
+  background-size: 100% 2px;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+#crt::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at center, rgba(255,255,255,0.15) 0%, rgba(0,0,0,0.2) 70%);
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+#start-msg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #6ec8ff;
+  background: #001a44;
+  padding: 20px 40px;
+  border: 1px solid #6ec8ff;
+  cursor: pointer;
+  text-shadow: 0 0 8px #6ec8ff;
+}
+</style>
+</head>
+<body>
+<div id="crt">
+  <canvas id="screen" width="800" height="600"></canvas>
+  <div id="start-msg">Click to start</div>
+</div>
+<script>
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+const rows = 25;
+const cols = 10;
+const colWidth = canvas.width / cols;
+const rowHeight = canvas.height / rows;
+ctx.font = Math.floor(rowHeight * 0.8) + 'px "Courier New", monospace';
+ctx.textBaseline = 'top';
+ctx.fillStyle = '#6ec8ff';
+let data = [];
+for (let i = 0; i < rows; i++) {
+  data.push(newRow());
+}
+function newRow() {
+  const row = [];
+  for (let c = 0; c < cols; c++) {
+    if (c % 2 === 0) {
+      row[c] = String(Math.floor(Math.random() * 100000));
+    } else {
+      row[c] = '';
+    }
+  }
+  return row;
+}
+function draw() {
+  ctx.fillStyle = '#001a44';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#6ec8ff';
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (c % 2 === 0) {
+        ctx.fillText(data[r][c], c * colWidth + 2, r * rowHeight + 2);
+      }
+    }
+  }
+}
+function step() {
+  data.shift();
+  data.push(newRow());
+  draw();
+  playSound();
+}
+let interval;
+function start() {
+  document.getElementById('start-msg').style.display = 'none';
+  draw();
+  interval = setInterval(step, 200);
+}
+const startMsg = document.getElementById('start-msg');
+startMsg.addEventListener('click', () => {
+  initAudio();
+  start();
+});
+let audioCtx;
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 200 + Math.random() * 600;
+  gain.gain.value = 0.05;
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+  osc.stop(audioCtx.currentTime + 0.2);
+}
+</script>
+</body>
+</html>
