@@ -21,33 +21,9 @@ html, body {
   font-family: 'Courier New', monospace;
   overflow: hidden;
   padding: 10px;
-  box-shadow: 0 0 20px #001a44, inset 0 0 120px #002a6d;
-  text-shadow: 0 0 8px #6ec8ff;
+  box-shadow: 0 0 20px #001a44;
   border-radius: 20px;
   transform: perspective(1200px) rotateX(4deg) rotateY(-3deg);
-}
-#crt::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.05) 50%);
-  background-size: 100% 2px;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-#crt::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  background: radial-gradient(circle at center, rgba(255,255,255,0.15) 0%, rgba(0,0,0,0.2) 70%);
-  pointer-events: none;
-  mix-blend-mode: overlay;
 }
 canvas {
   image-rendering: pixelated;
@@ -88,31 +64,44 @@ canvas {
 </div>
 <script>
 const canvas = document.getElementById('screen');
-const ctx = canvas.getContext('2d');
+const gl = canvas.getContext('webgl');
+if (!gl) {
+  alert('WebGL not supported');
+} else {
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+}
+
+const offscreen = document.createElement('canvas');
+offscreen.width = canvas.width;
+offscreen.height = canvas.height;
+const ctx = offscreen.getContext('2d');
+
 const noiseCanvas = document.getElementById('noise');
 noiseCanvas.width = 100;
 noiseCanvas.height = 75;
 noiseCanvas.style.width = '100%';
 noiseCanvas.style.height = '100%';
 const noiseCtx = noiseCanvas.getContext('2d');
+
 const rows = 25;
 const cols = 10;
-const colWidth = canvas.width / cols;
-const rowHeight = canvas.height / rows;
+const colWidth = offscreen.width / cols;
+const rowHeight = offscreen.height / rows;
 ctx.font = Math.floor(rowHeight * 0.8) + 'px "Courier New", monospace';
 ctx.textBaseline = 'top';
 ctx.textAlign = 'left';
+
 const data = Array.from({length: rows}, () => Array(cols).fill(''));
 let currentCol = 0;
+
 function randomDecimal() {
   return (Math.random() * 1000).toFixed(3);
 }
-function draw() {
+
+function drawText() {
   ctx.fillStyle = 'rgba(0,26,68,0.15)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, offscreen.width, offscreen.height);
   ctx.fillStyle = '#6ec8ff';
-  ctx.shadowColor = '#6ec8ff';
-  ctx.shadowBlur = 8;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c += 2) {
       const val = data[r][c];
@@ -121,8 +110,8 @@ function draw() {
       }
     }
   }
-  ctx.shadowBlur = 0;
 }
+
 function renderNoise() {
   const imageData = noiseCtx.createImageData(noiseCanvas.width, noiseCanvas.height);
   for (let i = 0; i < imageData.data.length; i += 4) {
@@ -132,6 +121,81 @@ function renderNoise() {
   }
   noiseCtx.putImageData(imageData, 0, 0);
 }
+// WebGL setup
+const vertSrc = `
+attribute vec2 a_position;
+varying vec2 v_uv;
+void main(){
+  v_uv = (a_position + 1.0) * 0.5;
+  gl_Position = vec4(a_position,0.0,1.0);
+}`;
+
+const fragSrc = `
+precision mediump float;
+uniform sampler2D u_texture;
+varying vec2 v_uv;
+void main(){
+  vec2 uv = v_uv;
+  vec2 center = uv - 0.5;
+  float dist = dot(center, center);
+  uv += center * dist * 0.3;
+  vec3 color = texture2D(u_texture, uv).rgb;
+  float off = 1.0 / 512.0;
+  vec3 bloom = (
+    texture2D(u_texture, uv + vec2(off,0.0)).rgb +
+    texture2D(u_texture, uv - vec2(off,0.0)).rgb +
+    texture2D(u_texture, uv + vec2(0.0,off)).rgb +
+    texture2D(u_texture, uv - vec2(0.0,off)).rgb
+  ) * 0.25;
+  color += bloom * 0.4;
+  float bright = max(max(color.r, color.g), color.b);
+  color += color * bright * 0.2;
+  gl_FragColor = vec4(color,1.0);
+}`;
+
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  return shader;
+}
+function createProgram(gl, vert, frag) {
+  const program = gl.createProgram();
+  gl.attachShader(program, vert);
+  gl.attachShader(program, frag);
+  gl.linkProgram(program);
+  return program;
+}
+
+const vert = createShader(gl, gl.VERTEX_SHADER, vertSrc);
+const frag = createShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+const program = createProgram(gl, vert, frag);
+gl.useProgram(program);
+
+const positionLoc = gl.getAttribLocation(program, 'a_position');
+const buffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1,-1, 1,-1, -1,1,
+  -1,1, 1,-1, 1,1
+]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(positionLoc);
+gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+const texture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, texture);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.viewport(0, 0, canvas.width, canvas.height);
+
+function render() {
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offscreen);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
 function tick() {
   const bottomRow = data[rows - 1];
   bottomRow[currentCol] = randomDecimal();
@@ -142,19 +206,25 @@ function tick() {
     data.shift();
     currentCol = 0;
   }
-  draw();
+  drawText();
+  render();
   renderNoise();
 }
+
 let interval;
 function start() {
   document.getElementById('start-msg').style.display = 'none';
+  drawText();
+  render();
   interval = setInterval(tick, 50);
 }
+
 const startMsg = document.getElementById('start-msg');
 startMsg.addEventListener('click', () => {
   initAudio();
   start();
 });
+
 let audioCtx;
 function initAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
