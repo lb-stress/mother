@@ -68,7 +68,7 @@ const gl = canvas.getContext('webgl');
 if (!gl) {
   alert('WebGL not supported');
 } else {
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // flip texture vertically
 }
 
 const offscreen = document.createElement('canvas');
